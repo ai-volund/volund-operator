@@ -6,5 +6,5 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/volund-operator ./cmd/operator
 
 FROM gcr.io/distroless/static:nonroot
-COPY --from=builder /bin/volund-operator /volund-operator
-ENTRYPOINT ["/volund-operator"]
+COPY --from=builder /bin/volund-operator /bin/volund-operator
+ENTRYPOINT ["/bin/volund-operator"]

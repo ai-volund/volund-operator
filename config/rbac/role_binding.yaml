@@ -1,0 +1,13 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: volund-operator-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: volund-operator-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: volund-operator-controller-manager
+    namespace: volund-system

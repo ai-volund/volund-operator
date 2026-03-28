@@ -1,0 +1,107 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: volund-operator-manager-role
+rules:
+  # AgentWarmPool — full CRUD + status
+  - apiGroups:
+      - volund.ai
+    resources:
+      - agentwarmpool
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - volund.ai
+    resources:
+      - agentwarmpool/status
+    verbs:
+      - get
+      - patch
+      - update
+
+  # AgentInstance — full CRUD + status (used by both controllers)
+  - apiGroups:
+      - volund.ai
+    resources:
+      - agentinstances
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - volund.ai
+    resources:
+      - agentinstances/status
+    verbs:
+      - get
+      - patch
+      - update
+
+  # AgentProfile — read + status
+  - apiGroups:
+      - volund.ai
+    resources:
+      - agentprofiles
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - volund.ai
+    resources:
+      - agentprofiles/status
+    verbs:
+      - get
+      - patch
+      - update
+
+  # Skill — full CRUD + status
+  - apiGroups:
+      - volund.ai
+    resources:
+      - skills
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - volund.ai
+    resources:
+      - skills/status
+    verbs:
+      - get
+      - patch
+      - update
+
+  # Pods — full CRUD from AgentInstance controller, list/watch from pool controller
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch

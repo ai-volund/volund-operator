@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -47,9 +48,11 @@ func (r *AgentWarmPoolReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Partition instances by state.
-	var warm, active, terminating int32
+	var pending, warm, active, terminating int32
 	for _, inst := range instances.Items {
 		switch inst.Status.State {
+		case "", "pending":
+			pending++
 		case "warm":
 			warm++
 		case "active":
@@ -60,19 +63,37 @@ func (r *AgentWarmPoolReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	desired := pool.Spec.Replicas
-	logger.Info("reconciling pool", "warm", warm, "active", active, "desired", desired)
 
-	// Scale up: create new warm instances if below desired.
-	if warm < desired {
-		toCreate := desired - warm
+	// Count pending + warm as "supply" — pending instances are in-flight
+	// toward becoming warm. Without this, the controller creates unbounded
+	// instances while existing ones are still starting up.
+	supply := pending + warm
+
+	logger.Info("reconciling pool",
+		"pending", pending, "warm", warm, "active", active,
+		"terminating", terminating, "supply", supply, "desired", desired)
+
+	// Scale up: create new instances only if supply is below desired.
+	// Cap new creations at 2 per reconcile to avoid bursts.
+	if supply < desired {
+		toCreate := desired - supply
+		const maxBurst int32 = 2
+		if toCreate > maxBurst {
+			toCreate = maxBurst
+		}
 		for i := int32(0); i < toCreate; i++ {
 			if err := r.createInstance(ctx, &pool); err != nil {
 				return ctrl.Result{}, fmt.Errorf("create instance: %w", err)
 			}
 		}
+		// If we still need more, requeue after a brief delay to avoid bursts.
+		if supply+toCreate < desired {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 	}
 
 	// Scale down: mark excess warm instances as terminating.
+	// Only terminate warm (idle) instances, never pending or active.
 	if warm > desired {
 		excess := warm - desired
 		deleted := int32(0)
@@ -100,10 +121,15 @@ func (r *AgentWarmPoolReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: pool.Generation,
 		Reason:             "Reconciled",
-		Message:            fmt.Sprintf("%d warm, %d active", warm, active),
+		Message:            fmt.Sprintf("%d pending, %d warm, %d active", pending, warm, active),
 	})
 	if err := r.Status().Update(ctx, &pool); err != nil && !errors.IsConflict(err) {
 		return ctrl.Result{}, err
+	}
+
+	// If there are pending instances, requeue to check their progress.
+	if pending > 0 {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -175,14 +201,24 @@ func podForInstance(inst *volundv1.AgentInstance) *corev1.Pod {
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers: []corev1.Container{
 				{
-					Name:  "agent",
-					Image: inst.Spec.Image,
+					Name:            "agent",
+					Image:           inst.Spec.Image,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					Env: []corev1.EnvVar{
+						// VOLUND_INSTANCE_ID is injected via Downward API so each pod
+						// reports its own unique name in agent_start stream events.
+						{
+							Name: "VOLUND_INSTANCE_ID",
+							ValueFrom: &corev1.EnvVarSource{
+								FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+							},
+						},
 						{Name: "VOLUND_TENANT_ID", Value: inst.Spec.TenantID},
-						{Name: "VOLUND_PROFILE_ID", Value: inst.Spec.ProfileID},
+						// VOLUND_PROFILE is the NATS pool subject suffix — must match
+						// the profileName the gateway dispatches to.
+						{Name: "VOLUND_PROFILE", Value: inst.Spec.ProfileID},
 						{Name: "VOLUND_LLM_ROUTER_ADDR", Value: inst.Spec.LLMRouterAddr},
 						{Name: "VOLUND_NATS_URL", Value: inst.Spec.NATSUrl},
-						{Name: "VOLUND_INSTANCE_NAME", Value: inst.Name},
 					},
 				},
 			},

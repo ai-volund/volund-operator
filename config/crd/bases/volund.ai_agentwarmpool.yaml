@@ -1,0 +1,167 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agentwarmpool.volund.ai
+  annotations:
+    controller-gen.kubebuilder.io/version: "(hand-written)"
+spec:
+  group: volund.ai
+  names:
+    kind: AgentWarmPool
+    listKind: AgentWarmPoolList
+    plural: agentwarmpool
+    singular: agentwarmpool
+    shortNames:
+      - awp
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyReplicas
+        - name: Desired
+          type: integer
+          jsonPath: .spec.replicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: >-
+            AgentWarmPool maintains a pool of pre-warmed generic agent pods
+            for a tenant. Agents are claimed on demand and released back
+            to the pool.
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              description: >-
+                APIVersion defines the versioned schema of this representation
+                of an object.
+              type: string
+            kind:
+              description: >-
+                Kind is a string value representing the REST resource this
+                object represents.
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AgentWarmPoolSpec defines the desired state of the pool.
+              type: object
+              required:
+                - tenantId
+              properties:
+                replicas:
+                  description: >-
+                    Replicas is the target number of warm (unclaimed) pods
+                    to maintain.
+                  type: integer
+                  format: int32
+                  default: 2
+                  minimum: 0
+                tenantId:
+                  description: TenantID is the Volund tenant that owns this pool.
+                  type: string
+                profileId:
+                  description: >-
+                    ProfileID is the agent profile to inject into claimed pods.
+                  type: string
+                image:
+                  description: Image is the volund-agent container image to run.
+                  type: string
+                  default: "ghcr.io/ai-volund/volund-agent:latest"
+                llmRouterAddr:
+                  description: >-
+                    LLMRouterAddr is the gRPC address of the control plane
+                    LLM service.
+                  type: string
+                  default: "volund-controlplane:9091"
+                natsUrl:
+                  description: >-
+                    NATSUrl is the NATS server URL for event publishing.
+                  type: string
+                idleTimeoutSeconds:
+                  description: >-
+                    IdleTimeoutSeconds is how long a warm pod waits before
+                    going cold.
+                  type: integer
+                  format: int32
+                  default: 300
+            status:
+              description: >-
+                AgentWarmPoolStatus reflects the observed state of the pool.
+              type: object
+              properties:
+                readyReplicas:
+                  description: >-
+                    ReadyReplicas is the number of warm (unclaimed) pods
+                    ready to accept work.
+                  type: integer
+                  format: int32
+                activeReplicas:
+                  description: >-
+                    ActiveReplicas is the number of currently claimed (busy) pods.
+                  type: integer
+                  format: int32
+                conditions:
+                  description: >-
+                    Conditions holds standard Kubernetes condition types.
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    properties:
+                      lastTransitionTime:
+                        description: >-
+                          lastTransitionTime is the last time the condition
+                          transitioned from one status to another.
+                        type: string
+                        format: date-time
+                      message:
+                        description: >-
+                          message is a human readable message indicating
+                          details about the transition.
+                        type: string
+                        maxLength: 32768
+                      observedGeneration:
+                        description: >-
+                          observedGeneration represents the .metadata.generation
+                          that the condition was set based upon.
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      reason:
+                        description: >-
+                          reason contains a programmatic identifier indicating
+                          the reason for the condition's last transition.
+                        type: string
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
+                      status:
+                        description: status of the condition.
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      type:
+                        description: >-
+                          type of condition in CamelCase or in
+                          foo.example.com/CamelCase.
+                        type: string
+                        maxLength: 316
+                        pattern: "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$"

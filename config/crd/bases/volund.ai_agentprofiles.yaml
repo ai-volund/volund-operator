@@ -1,0 +1,146 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agentprofiles.volund.ai
+spec:
+  group: volund.ai
+  names:
+    kind: AgentProfile
+    listKind: AgentProfileList
+    plural: agentprofiles
+    singular: agentprofile
+    shortNames:
+      - ap
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Type
+          type: string
+          jsonPath: .spec.profileType
+        - name: Provider
+          type: string
+          jsonPath: .spec.model.provider
+        - name: Model
+          type: string
+          jsonPath: .spec.model.name
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: AgentProfile defines an agent's identity — system prompt, model config, skills, and delegation rules.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - displayName
+                - profileType
+                - systemPrompt
+                - model
+              properties:
+                displayName:
+                  type: string
+                  description: Human-readable name for the agent profile.
+                description:
+                  type: string
+                  description: Describes what this agent does.
+                profileType:
+                  type: string
+                  description: Whether this agent is an orchestrator or specialist.
+                  enum:
+                    - orchestrator
+                    - specialist
+                systemPrompt:
+                  type: string
+                  description: The system prompt injected into conversations.
+                model:
+                  type: object
+                  description: LLM provider and model configuration.
+                  required:
+                    - provider
+                    - name
+                  properties:
+                    provider:
+                      type: string
+                      description: "LLM provider (e.g. anthropic, openai)."
+                    name:
+                      type: string
+                      description: "Model name (e.g. claude-sonnet-4-20250514)."
+                    temperature:
+                      type: number
+                      format: float
+                      description: Controls randomness in generation.
+                    maxTokens:
+                      type: integer
+                      format: int32
+                      description: Maximum number of tokens to generate.
+                skills:
+                  type: array
+                  description: Available tool/skill names.
+                  items:
+                    type: string
+                delegation:
+                  type: object
+                  description: Sub-agent spawning rules.
+                  properties:
+                    canDelegate:
+                      type: boolean
+                      description: Whether this agent can spawn sub-agents.
+                    maxConcurrent:
+                      type: integer
+                      format: int32
+                      description: Maximum number of concurrent sub-agent tasks.
+                    allowedProfiles:
+                      type: array
+                      description: Profile names this agent may delegate to.
+                      items:
+                        type: string
+                maxToolRounds:
+                  type: integer
+                  format: int32
+                  default: 25
+                  description: Limits tool call rounds per turn.
+            status:
+              type: object
+              properties:
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                      - lastTransitionTime
+                      - reason
+                      - message
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string

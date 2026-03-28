@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: volund-system
+  labels:
+    app.kubernetes.io/name: volund-operator
+    control-plane: controller-manager
