@@ -1,0 +1,88 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: sandboxclaims.volund.ai
+spec:
+  group: volund.ai
+  names:
+    kind: SandboxClaim
+    listKind: SandboxClaimList
+    plural: sandboxclaims
+    singular: sandboxclaim
+    shortNames:
+      - sbclaim
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Pod
+          type: string
+          jsonPath: .status.podName
+        - name: Pool
+          type: string
+          jsonPath: .spec.poolRef
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: SandboxClaim is a request to claim a sandbox pod from a warm pool.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - poolRef
+                - conversationId
+                - tenantId
+              properties:
+                poolRef:
+                  type: string
+                  description: PoolRef references the SandboxWarmPool to claim from.
+                conversationId:
+                  type: string
+                  description: ConversationID ties this claim to a conversation lifecycle.
+                tenantId:
+                  type: string
+                  description: TenantID for ownership tracking.
+                ttlSeconds:
+                  type: integer
+                  format: int32
+                  description: TTLSeconds is the auto-delete duration (safety net).
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  description: "Phase is one of: Pending, Bound, Released, Failed."
+                  enum:
+                    - Pending
+                    - Bound
+                    - Released
+                    - Failed
+                podName:
+                  type: string
+                  description: PodName is the name of the claimed sandbox pod.
+                endpoint:
+                  type: string
+                  description: Endpoint is the HTTP address of the sandbox runtime API.
+                boundAt:
+                  type: string
+                  format: date-time
+                  description: BoundAt is when the claim was fulfilled.
+                error:
+                  type: string
+                  description: Error message if phase is Failed.

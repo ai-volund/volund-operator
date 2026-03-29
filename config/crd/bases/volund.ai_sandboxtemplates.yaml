@@ -1,0 +1,97 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: sandboxtemplates.volund.ai
+spec:
+  group: volund.ai
+  names:
+    kind: SandboxTemplate
+    listKind: SandboxTemplateList
+    plural: sandboxtemplates
+    singular: sandboxtemplate
+    shortNames:
+      - sbtmpl
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: RuntimeClass
+          type: string
+          jsonPath: .spec.runtimeClassName
+        - name: Image
+          type: string
+          jsonPath: .spec.image
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: SandboxTemplate defines a reusable sandbox pod spec for tool execution.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - runtimeClassName
+                - image
+              properties:
+                runtimeClassName:
+                  type: string
+                  description: RuntimeClassName for kernel isolation (e.g., "gvisor").
+                image:
+                  type: string
+                  description: Image for the sandbox runtime container.
+                resources:
+                  type: object
+                  description: Resources for the sandbox container.
+                  x-kubernetes-preserve-unknown-fields: true
+                networkPolicyMode:
+                  type: string
+                  description: "NetworkPolicyMode controls network policy management. \"managed\" means the operator creates default-deny + DNS egress. \"custom\" means the user manages their own NetworkPolicy."
+                  enum:
+                    - managed
+                    - custom
+                  default: managed
+                allowedEgress:
+                  type: array
+                  description: AllowedEgress defines additional egress rules beyond DNS (only when networkPolicyMode=managed).
+                  items:
+                    type: object
+                    properties:
+                      cidr:
+                        type: string
+                        description: "CIDR is the destination IP block (e.g., \"10.0.0.0/8\")."
+                      ports:
+                        type: array
+                        description: Ports are the allowed destination ports.
+                        items:
+                          type: integer
+                runAsUser:
+                  type: integer
+                  format: int64
+                  description: RunAsUser sets the UID for the sandbox container.
+                runAsNonRoot:
+                  type: boolean
+                  description: RunAsNonRoot requires that the sandbox container runs as a non-root user.
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                  description: Ready indicates whether the template has been validated and is usable.
+                error:
+                  type: string
+                  description: Error contains a human-readable error message if the template is invalid.

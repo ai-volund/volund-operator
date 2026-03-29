@@ -12,7 +12,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	nodev1 "k8s.io/api/node/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -76,7 +80,10 @@ var _ = BeforeSuite(func() {
 	Expect(cfg).NotTo(BeNil())
 
 	scheme = runtime.NewScheme()
+	Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
+	Expect(nodev1.AddToScheme(scheme)).To(Succeed())
 	Expect(volundv1.AddToScheme(scheme)).To(Succeed())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
@@ -98,6 +105,19 @@ var _ = BeforeSuite(func() {
 
 	err = (&SkillReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
+
+	err = (&SandboxWarmPoolReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = (&SandboxClaimReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Create the gVisor RuntimeClass so envtest's API server accepts sandbox pods.
+	rc := &nodev1.RuntimeClass{
+		ObjectMeta: metav1.ObjectMeta{Name: "gvisor"},
+		Handler:    "runsc",
+	}
+	Expect(k8sClient.Create(context.Background(), rc)).To(Succeed())
 
 	go func() {
 		defer GinkgoRecover()
