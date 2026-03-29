@@ -22,6 +22,7 @@ type AgentInstanceReconciler struct {
 
 // +kubebuilder:rbac:groups=volund.ai,resources=agentinstances,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volund.ai,resources=agentinstances/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=volund.ai,resources=agentprofiles,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 
 func (r *AgentInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -59,11 +60,25 @@ func (r *AgentInstanceReconciler) reconcilePending(ctx context.Context, inst *vo
 	logger := log.FromContext(ctx)
 
 	if len(pods.Items) == 0 {
-		pod := podForInstance(inst)
+		// Look up the AgentProfile CR to inject profile type and model config.
+		var profile *volundv1.AgentProfile
+		if inst.Spec.ProfileID != "" {
+			var p volundv1.AgentProfile
+			key := client.ObjectKey{Name: inst.Spec.ProfileID, Namespace: inst.Namespace}
+			if err := r.Get(ctx, key, &p); err != nil {
+				logger.Info("profile not found, creating pod without profile config",
+					"profile", inst.Spec.ProfileID, "error", err)
+			} else {
+				profile = &p
+			}
+		}
+
+		pod := podForInstance(inst, profile)
 		if err := r.Create(ctx, pod); err != nil {
 			return ctrl.Result{}, fmt.Errorf("create pod: %w", err)
 		}
-		logger.Info("created pod", "instance", inst.Name, "pod", pod.Name)
+		logger.Info("created pod", "instance", inst.Name, "pod", pod.Name,
+			"profile", inst.Spec.ProfileID, "profileFound", profile != nil)
 		inst.Status.State = "pending"
 		inst.Status.PodName = pod.Name
 		if err := r.Status().Update(ctx, inst); err != nil && !errors.IsConflict(err) {

@@ -183,7 +183,46 @@ func setCondition(conditions *[]metav1.Condition, c metav1.Condition) {
 }
 
 // podForInstance builds a Pod spec for the given AgentInstance.
-func podForInstance(inst *volundv1.AgentInstance) *corev1.Pod {
+// If profile is non-nil, the pod receives the profile's type, model, and system
+// prompt as environment variables so the agent starts with the correct role.
+func podForInstance(inst *volundv1.AgentInstance, profile *volundv1.AgentProfile) *corev1.Pod {
+	env := []corev1.EnvVar{
+		// VOLUND_INSTANCE_ID is injected via Downward API so each pod
+		// reports its own unique name in agent_start stream events.
+		{
+			Name: "VOLUND_INSTANCE_ID",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		},
+		{Name: "VOLUND_TENANT_ID", Value: inst.Spec.TenantID},
+		// VOLUND_PROFILE is the NATS pool subject suffix — must match
+		// the profileName the gateway dispatches to.
+		{Name: "VOLUND_PROFILE", Value: inst.Spec.ProfileID},
+		{Name: "VOLUND_LLM_ROUTER_ADDR", Value: inst.Spec.LLMRouterAddr},
+		{Name: "VOLUND_NATS_URL", Value: inst.Spec.NATSUrl},
+		// Redis for session memory.
+		{Name: "VOLUND_REDIS_ADDR", Value: "redis:6379"},
+	}
+
+	// Inject profile fields when the AgentProfile CR is available.
+	if profile != nil {
+		env = append(env,
+			corev1.EnvVar{Name: "VOLUND_PROFILE_TYPE", Value: profile.Spec.ProfileType},
+			corev1.EnvVar{Name: "VOLUND_PROVIDER", Value: profile.Spec.Model.Provider},
+			corev1.EnvVar{Name: "VOLUND_MODEL", Value: profile.Spec.Model.Name},
+		)
+		if profile.Spec.SystemPrompt != "" {
+			env = append(env, corev1.EnvVar{Name: "VOLUND_SYSTEM_PROMPT", Value: profile.Spec.SystemPrompt})
+		}
+		if profile.Spec.Model.MaxTokens > 0 {
+			env = append(env, corev1.EnvVar{Name: "VOLUND_MAX_TOKENS", Value: fmt.Sprintf("%d", profile.Spec.Model.MaxTokens)})
+		}
+		if profile.Spec.MaxToolRounds > 0 {
+			env = append(env, corev1.EnvVar{Name: "VOLUND_MAX_TOOL_ROUNDS", Value: fmt.Sprintf("%d", profile.Spec.MaxToolRounds)})
+		}
+	}
+
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: inst.Name + "-",
@@ -204,22 +243,7 @@ func podForInstance(inst *volundv1.AgentInstance) *corev1.Pod {
 					Name:            "agent",
 					Image:           inst.Spec.Image,
 					ImagePullPolicy: corev1.PullIfNotPresent,
-					Env: []corev1.EnvVar{
-						// VOLUND_INSTANCE_ID is injected via Downward API so each pod
-						// reports its own unique name in agent_start stream events.
-						{
-							Name: "VOLUND_INSTANCE_ID",
-							ValueFrom: &corev1.EnvVarSource{
-								FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
-							},
-						},
-						{Name: "VOLUND_TENANT_ID", Value: inst.Spec.TenantID},
-						// VOLUND_PROFILE is the NATS pool subject suffix — must match
-						// the profileName the gateway dispatches to.
-						{Name: "VOLUND_PROFILE", Value: inst.Spec.ProfileID},
-						{Name: "VOLUND_LLM_ROUTER_ADDR", Value: inst.Spec.LLMRouterAddr},
-						{Name: "VOLUND_NATS_URL", Value: inst.Spec.NATSUrl},
-					},
+					Env:             env,
 				},
 			},
 		},

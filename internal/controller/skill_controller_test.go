@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -286,6 +287,98 @@ var _ = Describe("Skill Controller", func() {
 			cond := getReadyCondition(name)
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Message).To(ContainSubstring("allowedCommands must not be empty"))
+		})
+	})
+
+	Describe("Shared-mode MCP skill", func() {
+		It("should create a Deployment and Service for shared mode", func() {
+			name := fmt.Sprintf("shared-skill-%d", time.Now().UnixNano())
+			skill := &volundv1.Skill{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: ns.Name,
+				},
+				Spec: volundv1.SkillSpec{
+					Type:        "mcp",
+					Version:     "1.0.0",
+					Description: "A shared MCP skill",
+					Runtime: &volundv1.SkillRuntime{
+						Image:     "ghcr.io/ai-volund/skill-github:1.0.0",
+						Mode:      "shared",
+						Transport: "http-sse",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, skill)).To(Succeed())
+
+			// Wait for Ready condition.
+			Eventually(func() *metav1.Condition {
+				return getReadyCondition(name)
+			}).WithTimeout(timeout).WithPolling(interval).ShouldNot(BeNil())
+
+			cond := getReadyCondition(name)
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+
+			// Verify Deployment was created.
+			deployName := fmt.Sprintf("skill-%s", name)
+			var deploy appsv1.Deployment
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{
+					Name:      deployName,
+					Namespace: ns.Name,
+				}, &deploy)
+			}).WithTimeout(timeout).WithPolling(interval).Should(Succeed())
+
+			Expect(deploy.Spec.Template.Spec.Containers[0].Image).To(Equal("ghcr.io/ai-volund/skill-github:1.0.0"))
+			Expect(deploy.Labels["volund.ai/skill-mode"]).To(Equal("shared"))
+			Expect(*deploy.Spec.Replicas).To(Equal(int32(1)))
+
+			// Verify Service was created.
+			var svc corev1.Service
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{
+					Name:      deployName,
+					Namespace: ns.Name,
+				}, &svc)
+			}).WithTimeout(timeout).WithPolling(interval).Should(Succeed())
+
+			Expect(svc.Spec.Ports[0].Port).To(Equal(int32(8080)))
+			Expect(svc.Labels["volund.ai/skill"]).To(Equal(name))
+		})
+
+		It("should NOT create Deployment for sidecar mode", func() {
+			name := fmt.Sprintf("sidecar-skill-%d", time.Now().UnixNano())
+			skill := &volundv1.Skill{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: ns.Name,
+				},
+				Spec: volundv1.SkillSpec{
+					Type:        "mcp",
+					Version:     "1.0.0",
+					Description: "A sidecar MCP skill",
+					Runtime: &volundv1.SkillRuntime{
+						Image:     "ghcr.io/ai-volund/skill-echo:1.0.0",
+						Mode:      "sidecar",
+						Transport: "stdio",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, skill)).To(Succeed())
+
+			// Wait for Ready condition.
+			Eventually(func() *metav1.Condition {
+				return getReadyCondition(name)
+			}).WithTimeout(timeout).WithPolling(interval).ShouldNot(BeNil())
+
+			// Verify no Deployment was created.
+			deployName := fmt.Sprintf("skill-%s", name)
+			var deploy appsv1.Deployment
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      deployName,
+				Namespace: ns.Name,
+			}, &deploy)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 
