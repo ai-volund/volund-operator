@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,6 +34,10 @@ func main() {
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
 		logger.Error(err, "add core scheme")
+		os.Exit(1)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "add apps scheme")
 		os.Exit(1)
 	}
 	if err := volundv1.AddToScheme(scheme); err != nil {

@@ -140,6 +140,159 @@ var _ = Describe("AgentProfile Controller", func() {
 		})
 	})
 
+	Describe("Visibility and ownership", func() {
+		It("should accept a system-visibility profile without ownerID", func() {
+			profileName = fmt.Sprintf("system-vis-%d", time.Now().UnixNano())
+			profile := &volundv1.AgentProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      profileName,
+					Namespace: ns.Name,
+				},
+				Spec: volundv1.AgentProfileSpec{
+					DisplayName:  "System Agent",
+					ProfileType:  "specialist",
+					Visibility:   "system",
+					SystemPrompt: "You are a system agent.",
+					Model: volundv1.ModelConfig{
+						Provider: "anthropic",
+						Name:     "claude-sonnet-4-20250514",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, profile)).To(Succeed())
+
+			Eventually(func() *metav1.Condition {
+				return getReadyCondition(profileName)
+			}).WithTimeout(timeout).WithPolling(interval).ShouldNot(BeNil())
+
+			cond := getReadyCondition(profileName)
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(cond.Reason).To(Equal("Valid"))
+		})
+
+		It("should accept a user-visibility profile with ownerID", func() {
+			profileName = fmt.Sprintf("user-vis-%d", time.Now().UnixNano())
+			profile := &volundv1.AgentProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      profileName,
+					Namespace: ns.Name,
+				},
+				Spec: volundv1.AgentProfileSpec{
+					DisplayName:  "Custom User Agent",
+					ProfileType:  "specialist",
+					Visibility:   "user",
+					OwnerID:      "user-12345",
+					SystemPrompt: "You are a custom user agent.",
+					Model: volundv1.ModelConfig{
+						Provider: "openai",
+						Name:     "gpt-oss-120b",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, profile)).To(Succeed())
+
+			Eventually(func() *metav1.Condition {
+				return getReadyCondition(profileName)
+			}).WithTimeout(timeout).WithPolling(interval).ShouldNot(BeNil())
+
+			cond := getReadyCondition(profileName)
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(cond.Reason).To(Equal("Valid"))
+		})
+
+		It("should reject user-visibility profile without ownerID", func() {
+			profileName = fmt.Sprintf("user-no-owner-%d", time.Now().UnixNano())
+			profile := &volundv1.AgentProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      profileName,
+					Namespace: ns.Name,
+				},
+				Spec: volundv1.AgentProfileSpec{
+					DisplayName:  "No Owner Agent",
+					ProfileType:  "specialist",
+					Visibility:   "user",
+					SystemPrompt: "You are missing an owner.",
+					Model: volundv1.ModelConfig{
+						Provider: "anthropic",
+						Name:     "claude-sonnet-4-20250514",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, profile)).To(Succeed())
+
+			Eventually(func() *metav1.Condition {
+				return getReadyCondition(profileName)
+			}).WithTimeout(timeout).WithPolling(interval).ShouldNot(BeNil())
+
+			cond := getReadyCondition(profileName)
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("ValidationFailed"))
+			Expect(cond.Message).To(ContainSubstring("ownerId is required"))
+		})
+
+		It("should reject invalid visibility value at API level", func() {
+			profileName = fmt.Sprintf("bad-vis-%d", time.Now().UnixNano())
+			profile := &volundv1.AgentProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      profileName,
+					Namespace: ns.Name,
+				},
+				Spec: volundv1.AgentProfileSpec{
+					DisplayName:  "Bad Visibility",
+					ProfileType:  "specialist",
+					Visibility:   "invalid",
+					SystemPrompt: "Test",
+					Model: volundv1.ModelConfig{
+						Provider: "anthropic",
+						Name:     "claude-sonnet-4-20250514",
+					},
+				},
+			}
+			err := k8sClient.Create(ctx, profile)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Unsupported value"))
+		})
+
+		It("should default visibility to system when omitted", func() {
+			profileName = fmt.Sprintf("default-vis-%d", time.Now().UnixNano())
+			profile := &volundv1.AgentProfile{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      profileName,
+					Namespace: ns.Name,
+				},
+				Spec: volundv1.AgentProfileSpec{
+					DisplayName:  "Default Visibility Agent",
+					ProfileType:  "specialist",
+					SystemPrompt: "You have default visibility.",
+					Model: volundv1.ModelConfig{
+						Provider: "anthropic",
+						Name:     "claude-sonnet-4-20250514",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, profile)).To(Succeed())
+
+			// Verify it defaults to "system".
+			var fetched volundv1.AgentProfile
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{
+					Name:      profileName,
+					Namespace: ns.Name,
+				}, &fetched)
+			}).WithTimeout(timeout).WithPolling(interval).Should(Succeed())
+
+			Expect(fetched.Spec.Visibility).To(Equal("system"))
+
+			// Should also be valid.
+			Eventually(func() *metav1.Condition {
+				return getReadyCondition(profileName)
+			}).WithTimeout(timeout).WithPolling(interval).ShouldNot(BeNil())
+
+			cond := getReadyCondition(profileName)
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
 	Describe("Updating a profile to fix validation", func() {
 		It("should transition Ready from False to True", func() {
 			profileName = fmt.Sprintf("fix-profile-%d", time.Now().UnixNano())

@@ -98,6 +98,28 @@ func (r *AgentProfileReconciler) validate(profile *volundv1.AgentProfile) metav1
 		}
 	}
 
+	// Validate visibility field.
+	if spec.Visibility != "" && spec.Visibility != "system" && spec.Visibility != "user" {
+		return metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: profile.Generation,
+			Reason:             "ValidationFailed",
+			Message:            fmt.Sprintf("visibility must be system or user, got %q", spec.Visibility),
+		}
+	}
+
+	// User-scoped profiles must have an ownerID.
+	if spec.Visibility == "user" && spec.OwnerID == "" {
+		return metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: profile.Generation,
+			Reason:             "ValidationFailed",
+			Message:            "ownerId is required when visibility is user",
+		}
+	}
+
 	return metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionTrue,

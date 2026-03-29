@@ -303,6 +303,7 @@ func (in *AgentInstanceList) DeepCopyInto(out *AgentInstanceList) {
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.profileType`
+// +kubebuilder:printcolumn:name="Visibility",type=string,JSONPath=`.spec.visibility`
 // +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=`.spec.model.provider`
 // +kubebuilder:printcolumn:name="Model",type=string,JSONPath=`.spec.model.name`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
@@ -323,6 +324,15 @@ type AgentProfileSpec struct {
 	// ProfileType is "orchestrator" or "specialist".
 	// +kubebuilder:validation:Enum=orchestrator;specialist
 	ProfileType string `json:"profileType"`
+	// Visibility controls who can see and use this agent profile.
+	// "system" profiles are visible to all users in the tenant.
+	// "user" profiles are only visible to the owner.
+	// +kubebuilder:validation:Enum=system;user
+	// +kubebuilder:default=system
+	Visibility string `json:"visibility,omitempty"`
+	// OwnerID is the user ID of the profile creator. Empty for system profiles.
+	// Set automatically from the user's JWT when creating user-scoped profiles.
+	OwnerID string `json:"ownerId,omitempty"`
 	// SystemPrompt is the system prompt injected into conversations.
 	SystemPrompt string `json:"systemPrompt"`
 	// Model configures the LLM.

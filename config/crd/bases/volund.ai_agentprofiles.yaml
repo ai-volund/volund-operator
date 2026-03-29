@@ -20,6 +20,9 @@ spec:
         - name: Type
           type: string
           jsonPath: .spec.profileType
+        - name: Visibility
+          type: string
+          jsonPath: .spec.visibility
         - name: Provider
           type: string
           jsonPath: .spec.model.provider
@@ -62,6 +65,21 @@ spec:
                   enum:
                     - orchestrator
                     - specialist
+                visibility:
+                  type: string
+                  description: >-
+                    Controls who can see and use this agent profile.
+                    "system" profiles are visible to all users in the tenant.
+                    "user" profiles are only visible to the owner.
+                  enum:
+                    - system
+                    - user
+                  default: system
+                ownerId:
+                  type: string
+                  description: >-
+                    User ID of the profile creator. Empty for system profiles.
+                    Set automatically from the user's JWT when creating user-scoped profiles.
                 systemPrompt:
                   type: string
                   description: The system prompt injected into conversations.

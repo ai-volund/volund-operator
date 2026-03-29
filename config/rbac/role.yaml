@@ -105,3 +105,40 @@ rules:
       - patch
       - update
       - watch
+
+  # Deployments — full CRUD from Skill controller (shared-mode skill sidecars)
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Services — full CRUD from Skill controller (shared-mode skill services)
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Events — create/patch for recording events
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
