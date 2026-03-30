@@ -228,23 +228,36 @@ func podForInstance(inst *volundv1.AgentInstance, profile *volundv1.AgentProfile
 	// Each skill's container image is run as an init container that copies
 	// its MCP binary into /skills-bin (shared emptyDir volume).
 	// Convention: the skill image has the binary at /usr/local/bin/mcp-{name}.
+	// For sidecar-mode skills, we use the skill's own container image as an init
+	// container to copy the MCP binary into a shared volume. In production,
+	// each skill publishes its own image (e.g. ghcr.io/ai-volund/skill-email:1.0.0).
+	//
+	// If the skill image matches the agent image (common in local dev where skills
+	// are compiled into the base image), the copy still works since the binaries
+	// are at /usr/local/bin/mcp-{name}.
 	var initContainers []corev1.Container
 	needsSkillVolume := false
+	agentImage := inst.Spec.Image
 	for _, sk := range skills {
 		if sk.Spec.Type != "mcp" || sk.Spec.Runtime == nil || sk.Spec.Runtime.Mode != "sidecar" {
 			continue
 		}
 		name := sk.Name
+		// Use the skill's own image. For local dev, fall back to the agent image
+		// which has the skill binaries baked in via the Dockerfile.
 		image := sk.Spec.Runtime.Image
 		if image == "" {
-			continue
+			image = agentImage
 		}
 		needsSkillVolume = true
 		initContainers = append(initContainers, corev1.Container{
 			Name:            fmt.Sprintf("skill-%s", name),
 			Image:           image,
 			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"cp", fmt.Sprintf("/usr/local/bin/mcp-%s", name), "/skills-bin/"},
+			// Try both common binary locations.
+			Command: []string{"sh", "-c", fmt.Sprintf(
+				"cp /usr/local/bin/mcp-%s /skills-bin/ 2>/dev/null || cp /bin/mcp-%s /skills-bin/ 2>/dev/null || echo 'WARN: mcp-%s not found in image'",
+				name, name, name)},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "skills-bin", MountPath: "/skills-bin"},
 			},
