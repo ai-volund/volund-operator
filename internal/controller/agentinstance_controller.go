@@ -23,6 +23,7 @@ type AgentInstanceReconciler struct {
 // +kubebuilder:rbac:groups=volund.ai,resources=agentinstances,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volund.ai,resources=agentinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=volund.ai,resources=agentprofiles,verbs=get;list;watch
+// +kubebuilder:rbac:groups=volund.ai,resources=skills,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 
 func (r *AgentInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -73,7 +74,19 @@ func (r *AgentInstanceReconciler) reconcilePending(ctx context.Context, inst *vo
 			}
 		}
 
-		pod := podForInstance(inst, profile)
+		// List sidecar-mode skills to inject as init containers.
+		var skillList volundv1.SkillList
+		if err := r.List(ctx, &skillList, client.InNamespace(inst.Namespace)); err != nil {
+			logger.Info("failed to list skills for sidecar injection", "error", err)
+		}
+		var sidecarSkills []volundv1.Skill
+		for _, sk := range skillList.Items {
+			if sk.Spec.Type == "mcp" && sk.Spec.Runtime != nil && sk.Spec.Runtime.Mode == "sidecar" {
+				sidecarSkills = append(sidecarSkills, sk)
+			}
+		}
+
+		pod := podForInstance(inst, profile, sidecarSkills)
 		if err := r.Create(ctx, pod); err != nil {
 			return ctrl.Result{}, fmt.Errorf("create pod: %w", err)
 		}

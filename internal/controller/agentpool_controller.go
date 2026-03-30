@@ -185,7 +185,8 @@ func setCondition(conditions *[]metav1.Condition, c metav1.Condition) {
 // podForInstance builds a Pod spec for the given AgentInstance.
 // If profile is non-nil, the pod receives the profile's type, model, and system
 // prompt as environment variables so the agent starts with the correct role.
-func podForInstance(inst *volundv1.AgentInstance, profile *volundv1.AgentProfile) *corev1.Pod {
+// skills are sidecar-mode Skill CRDs that need their binaries injected.
+func podForInstance(inst *volundv1.AgentInstance, profile *volundv1.AgentProfile, skills []volundv1.Skill) *corev1.Pod {
 	env := []corev1.EnvVar{
 		// VOLUND_INSTANCE_ID is injected via Downward API so each pod
 		// reports its own unique name in agent_start stream events.
@@ -223,6 +224,54 @@ func podForInstance(inst *volundv1.AgentInstance, profile *volundv1.AgentProfile
 		}
 	}
 
+	// Build init containers for sidecar-mode skills.
+	// Each skill's container image is run as an init container that copies
+	// its MCP binary into /skills-bin (shared emptyDir volume).
+	// Convention: the skill image has the binary at /usr/local/bin/mcp-{name}.
+	var initContainers []corev1.Container
+	needsSkillVolume := false
+	for _, sk := range skills {
+		if sk.Spec.Type != "mcp" || sk.Spec.Runtime == nil || sk.Spec.Runtime.Mode != "sidecar" {
+			continue
+		}
+		name := sk.Name
+		image := sk.Spec.Runtime.Image
+		if image == "" {
+			continue
+		}
+		needsSkillVolume = true
+		initContainers = append(initContainers, corev1.Container{
+			Name:            fmt.Sprintf("skill-%s", name),
+			Image:           image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"cp", fmt.Sprintf("/usr/local/bin/mcp-%s", name), "/skills-bin/"},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "skills-bin", MountPath: "/skills-bin"},
+			},
+		})
+	}
+
+	// Volumes and volume mounts for skills.
+	var volumes []corev1.Volume
+	var agentVolumeMounts []corev1.VolumeMount
+	if needsSkillVolume {
+		volumes = append(volumes, corev1.Volume{
+			Name: "skills-bin",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		})
+		agentVolumeMounts = append(agentVolumeMounts, corev1.VolumeMount{
+			Name:      "skills-bin",
+			MountPath: "/skills-bin",
+		})
+		// Add /skills-bin to PATH so the agent can find mcp-{name} binaries.
+		env = append(env, corev1.EnvVar{
+			Name:  "PATH",
+			Value: "/skills-bin:/usr/local/bin:/usr/bin:/bin",
+		})
+	}
+
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: inst.Name + "-",
@@ -237,15 +286,18 @@ func podForInstance(inst *volundv1.AgentInstance, profile *volundv1.AgentProfile
 			},
 		},
 		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
+			RestartPolicy:  corev1.RestartPolicyNever,
+			InitContainers: initContainers,
 			Containers: []corev1.Container{
 				{
 					Name:            "agent",
 					Image:           inst.Spec.Image,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Env:             env,
+					VolumeMounts:    agentVolumeMounts,
 				},
 			},
+			Volumes: volumes,
 		},
 	}
 }
